@@ -1,0 +1,300 @@
+---
+title: "Modelo VEC"
+author:
+- "Chantres Arrieta Nikole"
+date: "2025-06-01"
+output: pdf_document
+header-includes:
+ - \renewcommand{\and}{\\}
+---
+
+```{r,message=FALSE}
+library(readxl)
+library(xtable)
+library(knitr)
+library(broom)
+library(ggplot2)
+library(tseries)
+library(dynlm)
+library(urca)
+library(vars)
+library(FinTS)
+library(rugarch) 
+library(quantmod)
+library(forecast)
+```
+
+# Introducción
+
+## Base de datos
+
+
+
+  La base de datos abarca los recursos registrados en el SAR (Sistema de Ahorro para el Retiro) desde mayo de 1998 hasta febrero de este año. Incluye información detallada sobre los recursos administrados por las AFORES, los cuales gestionan las cuentas individuales de los trabajadores, tanto contribuciones obligatorias como al ahorro voluntario y solidario. También contiene datos sobre los recursos destinados a la vivienda, administrados por instituciones como el INFONAVIT y el FOVISSSTE, que permiten a los trabajadores acceder a créditos para la adquisición, mejoramiento o pago de sus viviendas.
+  
+(Comisión Nacional del Sistema de Ahorro para el Retiro [CONSAR], s.f.)
+  
+  La información cubre una amplia gama de instituciones, desde bancos tradicionales como Banamex hasta el recientemente creado Fondo de Pensiones para el Bienestar, reflejando la evolución del sistema a lo largo del tiempo. Esta base de datos permite analizar el comportamiento del ahorro para el retiro, asimismo, es una herramienta valiosa para el análisis de políticas públicas orientadas a fortalecer el sistema de pensiones.
+  
+  Dado la naturaleza de la base, es pertinente considerar el uso de modelos VAR o VEC para analizar su comportamiento conjunto. Estos modelos permiten capturar tanto la dinámica de corto plazo como las relaciones de equilibrio de largo plazo entre las variables, lo cual es útil para entender cómo se influyen mutuamente las distintas administradoras del ahorro.
+  
+```{r, message=FALSE, warning=FALSE}
+recursos_registrados_en_las_afores <- read_excel("recursos_registrados_en_las_afores.xlsx")
+```
+
+## Variables
+
+
+
+Para la selección de variables del modelo de series temporales, se decidió enfocar el análisis en los recursos administrados para el retiro por las AFORES, específicamente aquellos gestionados por instituciones que no tengan otro enfoque, por ejemplo, en este caso los bancos quedan excluidos, por lo que solo se tomará aProfuturo y Sura, también, se omite del estudio los recursos destinados a la vivienda, como los administrados por INFONAVIT y FOVISSSTE, con el fin de mantener un enfoque más preciso en el comportamiento del ahorro para el retiro.
+
+```{r}
+# Desde el 2015
+profuturo <- ts((as.numeric(recursos_registrados_en_las_afores[29,-c(1:204)])), start = c(2015, 1, 1), frequency = 12)
+sura <- ts((as.numeric(recursos_registrados_en_las_afores[30,-c(1:204)])), start = c(2015, 1, 1), frequency = 12)
+
+# Graficando las series de interés
+ts.plot(profuturo, sura,  col = c("orange", "lightblue"), main = "AFORES")
+legend("bottom", legend = c("profuturo", "sura"), col = c("orange","lightblue"), lwd = 2)
+```
+
+
+
+
+
+
+## Presentación del modelo
+
+### VEC
+
+$$
+\widehat{\Delta Profuturo_t} = 8560.947930\ - 0.542913\hat{e}_{t-1}\\
+$$
+
+$$
+\widehat{\Delta Sura_t} = 6435.7495946\ - 0.5720992\hat{e}_{t-1}\\
+$$
+
+
+
+
+
+
+## Modelo VEC
+
+### Hipótesis Conceptual
+
+La hipótesis conceptual de este modelo plantea que las AFORES Profuturo y Sura están relacionadas entre sí, dado que cada trabajador solo puede tener una cuenta individual de retiro, por lo tanto, cuando una persona cambia de AFORE, los recursos se transfieren a la nueva administradora, generando una relación directa entre los montos gestionados por cada institución, además de considerar los nuevos ingresos. Los motivos pueden variar, en algunos casos puede que se deba a la tasa de rendimiento, los usuarios optarán por la mejor. Bajo esta hipótesis se analizarán las series utilizando un modelo VEC o VAR, dependiendo de los resultados obtenidos en las pruebas de estacionariedad y cointegración.
+
+### Elección de variables
+
+La selección de variables para el modelo se basó en la identificación que a lo largo del tiempo muestran un comportamiento más relacionado entre sí, lo que sugiere la posibilidad de una dinámica conjunta. En particular, se eligieron las AFORES Profuturo y Sura, ya que sus series temporales presentan patrones similares en términos de tendencia, crecimiento y desviaciones.
+
+### Validez del modelo
+
+Para determinar el modelo debemos realizar las pruebas necesarías, empezando por la exploración de las variables.
+
+#### Estacionariedad
+
+$$
+H_0: La\ serie\ no\ es\ estacionaria
+$$
+$$vs$$
+$$
+H_1: La\ serie\ es\ estacionaria  
+$$
+
+
+```{r}
+# ACF de las series
+acf(profuturo)
+acf(sura)
+
+# Pruebas de las series
+adf.test(profuturo)
+adf.test(sura)
+```
+
+El análisis de las funciones de autocorrelación (ACF) revela autocorrelación significativa en los rezagos y un decaimiento lento, lo que sugiere la no estacionariedad de las series. 
+Las pruebas Dickey Fuller confirman esta observación, ya que para los dos casos $p-value > 0.05$, por lo que no permiten rechazar la hipótesis nula de no estacionariedad. Este comportamiento es esperado dada la naturaleza acumulativa de las variables, que tienden a mostrar una tendencia creciente. 
+A continuación, se analizará la primera diferencia de las series.
+
+```{r}
+# Primeras diferencias de las series
+dSura <- diff(sura)
+dProfuturo <- diff(profuturo)
+
+# Graficando las primeraas diferencias de las series
+ts.plot(dProfuturo, dSura, col = c("orange", "lightblue"))
+legend("bottom", legend = c("profuturo", "sura"), col = c("orange","lightblue"), lwd = 2)
+```
+
+Tras aplicar la primera diferencia a las series, se aprecia un comportamiento que sugiere estacionariedad. Las medias de las series transformadas se encuentran centradas alrededor de cero y su varianza parece mantenerse constante a lo largo del tiempo. Además, la dinámica de las dos AFORES muestra un comportamiento similar.
+
+
+```{r}
+# ACF de las diferencias
+acf(dProfuturo)
+acf(dSura)
+
+# Pruebas de las diferencias
+adf.test(dProfuturo)
+adf.test(dSura)
+```
+
+En las funciones de autocorrelación (ACF) de las primeras diferencias, se observa que la autocorrelación en los rezagos ha desaparecido en gran medida. Las pocas autocorrelaciones que exceden ligeramente las bandas de confianza podrían ser indicios del componente estacional, que a simple vista parece tratarse cada 3 meses en los años más recientes.
+Los resultados de las pruebas de Dickey-Fuller nos arrojan $p-value<0.05$, por lo tanto se rechaza hipótesis nula, es decir, las primera diferencias de las series son estacionarias, esto implica que las series originales son de orden de integración uno, $Profuturo_t\sim I(1)$ y $Sura_t\sim I(1)$
+
+#### Cointegración
+
+Una vez determinado que nuestras series son integradas de orden uno, es decir, I(1) el siguiente paso consiste en realizar una prueba de estacionariedad sobre los residuos obtenidos de la regresión entre las variables seleccionadas. Esta prueba, comúnmente conocida como prueba de cointegración, permite identificar si existe una relación de equilibrio de largo plazo entre las series, a pesar de que individualmente no sean estacionarias. Si los errores de la regresión resultan ser estacionarios, esto indicaría la presencia de cointegración, lo que justificaría el uso de un modelo VEC, que permite modelar tanto las relaciones de largo plazo como las dinámicas de corto plazo entre las variables. En caso contrario, si no se encuentra evidencia de cointegración, se optará por un modelo VAR en primeras diferencias.
+
+
+```{r}
+# Regresión entre las variables
+mod1 <- dynlm(sura ~profuturo)
+summary(mod1)
+
+# Residuos de la regresión
+e <- mod1$residuals
+plot(e, main = "Reisduos")
+```
+
+En el gráfico se observa una disminución en el nivel de los residuos durante el año 2020, este fenómeno puede explicarse por las consecuencias económicas de la pandemia, particularmente el incremento del desempleo, la pérdida de puestos de trabajo conllevó una reducción en los ingresos destinados a las cuentas de ahorro para el retiro, afectando a todas las AFORE
+
+```{r}
+# ACF de los residuos y su primera diferencia
+acf(e)
+```
+
+Se observa correlación solo en los primeros rezagos, con un decaimiento rápido. Sin embargo, esta evidencia no es suficiente para concluir que los residuos son estacionarios, por lo que se realizará la prueba formal correspondiente.
+
+Recordando que los valores críticos son distintos porque se tratan para verificar la cointegración, nos basamos en la siguiente ecuación de la prueba Dickey-Fuller:
+
+$$
+\Delta\hat{e}_t =\gamma\hat{e}_{t-1}+\nu_t
+$$
+
+Se selecciona un rezago de los residuos, sin incluir rezagos de sus diferencias, basándose en la estructura de la ecuación del modelo. Para complementar este criterio, el ACF de las diferencias de los residuos confirma que no es necesario incorporar ningún rezago adicional de estas diferencias.
+
+```{r}
+# Primera diferencia de los residuos
+de <- diff(e)
+acf(de)
+# Ningún rezago de la primera diferencia de los residuos rebasa las bandas de confianza
+```
+
+```{r}
+# Prueba de los residuos
+ur.df(e, type = "none", lags = 0)
+```
+
+Como $\tau = -3.3013 < -3.07$, rechazamos hipótesis nula al $\alpha= 0.1$, es decir los residuos son estacionarios, por lo tanto hay cointegración en las variables.
+
+Dado que los errores de la regresión entre las variables resultaron ser estacionarios, se estimará un modelo VEC (Vector Error Correction).
+
+### Resultados
+
+```{r}
+vec1 <- dynlm(dProfuturo ~ L(e, 1))
+vec2 <- dynlm(dSura ~ L(e, 1))
+
+tidy(vec1)
+tidy(vec2)
+```
+
+$$
+\widehat{\Delta Profuturo_t} = 8560.947930\ - 0.542913\hat{e}_{t-1}\\
+$$
+$$
+(t) \hspace{2.cm} (6.17) \hspace{1cm}(-3.46) \\
+$$
+
+$$
+\widehat{\Delta Sura_t} = 6435.7495946\ - 0.5720992\hat{e}_{t-1}\\
+$$
+$$
+(t) \hspace{2.cm} (4.77) \hspace{1cm}(-3.76) \\
+$$
+En la primera ecuación el término constante (8560.947930), indica el cambio promedio en los recursos administrados por Profuturo cuando no hay desequilibrio, es deciro cuando los rezagos de los residuos es cero. El coeficiente de corrección de error (-0.542913), señala que aproximadamente el 54.29% del desequilibrio del período anterior se corrige en el período actual. El signo negativo confirma que el modelo ajusta hacia el equilibrio a largo plazo. También podemos notar que los estadísticos t son significativos (p-valores pequeños), lo que valida la relación.
+
+En la segunda el intercepto  (6435.7495946) muestra el cambio promedio en los recursos de Sura en ausencia de desequilibrio, mientras que el xoeficiente de corrección de error (-0.5720992), corrige 57.21% del desequilibrio pasado, el ajuste es ligeramente mayor que en Profuturo, tamnbién tiene estadísticos significativos.
+
+Las AFORES están cointegradas, es decir, existe una relación estable entre sus recursos administrados en el tiempo. Los coeficientes de corrección de error son negativos y significativos, confirmando que los recursos de Profuturo y Sura reaccionan para corregir desviaciones del equilibrio, es decir, si una se desvía por encima de su relación histórica con la otra, tenderán a reducirse en el siguiente período para volver al equilibrio.
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Conclusión
+
+La conclusión de los resultados obtenidos a partir del modelo aplicado a las AFORES Profuturo y Sura indica que existe una relación significativa entre ellas. El modelo VEC encontró interacciones relevantes entre las AFORES, estos resultados, sugieren que los mercados de administración de recursos para el retiro en estas AFORES están interconectados y responden a mecanismos de corrección automáticos, como se plantea al principio que una persona puede cambiar de Administradora, además de que responden a factores macroeconómicos comunes, por ejemplo, tasas de interés, inflación, desempeño del mercado accionario.
+
+El modelo VEC revela que los recursos administrados por Profuturo y Sura no se mueven aleatoriamente, sino que están vinculados por un equilibrio dinámico. Esto tiene implicaciones para ahorradores, porque mayor predictibilidad en rendimientos, en AFORES, con la necesidad de monitorear competidores y con reguladores, debido a que pueden detectarse  señales que pueden desequilibrios sistémicos.
+
+
+
+
+
+![](Diagrama.png)
+
+# Bibliografía
+
+Hill, R. C., Griffiths, W. E., & Lim, G. C. (2020). Principles of econometrics (5th ed.). Wiley.
+
+J. Hamilton, Time Series Analysis (1994). Princeton University Press
+
+Comisión Nacional del Sistema de Ahorro para el Retiro (CONSAR). (s.f.). Información estadística. Gobierno de México. https://www.gob.mx/consar/articulos/informacion-estadistica-61314
+
+Comisión Nacional del Sistema de Ahorro para el Retiro. (s/f). Indicador de Rendimiento Neto (SIEFORES Generacionales). gob.mx. Recuperado el 21 de abril de 2025, de https://www.gob.mx/consar/articulos/indicador-de-rendimiento-neto
+
+Torres, Y. (2024, diciembre 10). Premian a Afore Sura por sus inversiones. El Economista. https://www.eleconomista.com.mx/sectorfinanciero/premian-afore-sura-inversiones-20241210-737822.html
+
+
+
+
+
+
+
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
